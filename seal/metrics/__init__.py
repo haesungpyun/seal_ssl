@@ -21,7 +21,3 @@ from .multilabel_classification_rbo import (
     MultilabelClassificationRankBiasedOverlap
 )
 from .seg_iou import SegIoU
-
-from .keyword_extraction_accuarcy import (
-    SentenceClassificationAccuracy
-)
