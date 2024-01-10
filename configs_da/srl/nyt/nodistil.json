@@ -17,7 +17,7 @@
     "data_loader": {
         "type": "multitask",
         "data_path": {
-            "labeled": "./data/conll-2012/v12/data/train/data/english/annotations",
+            "labeled": "./data/conll-2012/v12/data/train/data/english/annotations/@(pt|wb|mz)",
             "unlabeled": "./data/nyt/nyt-fold-@(0|1).jsonl"
         },
         "num_workers": {
@@ -47,7 +47,7 @@
         }
     },
     "train_data_path": "./",
-    "validation_data_path": "./data/conll-2012/v12/data/development/data/english/annotations",
+    "validation_data_path": "./data/conll-2012/v12/data/development",
     "model": {
         "type": "seal-srl",
         "decode_on_wordpieces": true,
@@ -235,7 +235,7 @@
         "filter_unlab": {
             "use_fu": false,
             "model_to_run": "./results/srl_onto_multi_from_scratch"
-        } 
+        }
     },
     "vocabulary": {
         "type": "from_files",
