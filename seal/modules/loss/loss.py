@@ -219,8 +219,10 @@ class CombinationUnlabeledLoss(Loss):
         buffer: Dict,
         **kwargs: Any,
     ) -> torch.Tensor:
-        
-        data_type = buffer.get("task")[0]
+        # no element due to thresholding then skip calculating loss
+        if x.numel() == 0 or y_hat.numel() == 0: 
+            return torch.zeros((1,1) , requires_grad=True).to(y_hat.device)
+        data_type= buffer.get("task")[0]
         
         try:
             loss_list = self.constituent_losses.get(data_type)

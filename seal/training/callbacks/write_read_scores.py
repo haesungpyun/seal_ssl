@@ -94,8 +94,10 @@ class ThresholdingCallback(TrainerCallback):
             for output in batch_outputs:
                 if output.get('score') is None or output.get('prob') is None:
                     continue
-                store_dict['prob'].extend(output.get('prob'))
-                store_dict['score'].extend(output.get('score'))
+                prob = output.get('prob')[output.get('prob') > float('-inf')]
+                score = output.get('score')[output.get('score') > float('-inf')]
+                store_dict['prob'].extend(prob)
+                store_dict['score'].extend(score)
             
             store_dict['prob'] = torch.stack(store_dict['prob'])
             store_dict['score'] = torch.stack(store_dict['score'])
