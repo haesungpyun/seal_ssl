@@ -61,11 +61,15 @@ class ThresholdingCallback(TrainerCallback):
                 threshold_dict = trainer.model.thresholding.as_dict()
             except:
                 threshold_dict = trainer.model.thresholding
+
             threshold = ThresholdingCallback(self.serialization_dir).storage['threshold']
             # import pdb
             # pdb.set_trace()
             # threshold_dict['score_conf']['threshold'] = threshold.to(self.device)
-            threshold_dict['score_conf']['threshold'] = threshold
+            try:
+                threshold_dict['score_conf']['threshold'] = threshold
+            except:
+                return
             logger.info(f"\tRestored Threshold:\t{threshold}\n")
         if trainer.filter_unlab['use_fu']:
             self.validate_save_unlabeled(trainer)
@@ -127,7 +131,7 @@ class ThresholdingCallback(TrainerCallback):
         use_scaling = self.trainer.model.loss_fn.loss_scaling['use_scaling']
         scaler_type = self.trainer.model.loss_fn.loss_scaling.get('scaler_type')
         
-        if not threshold_dict.get('use_th'):
+        if threshold_dict.get('method') != 'score':
             logger.info('!!!! Skip Mode! Do Not Calculate threshold !!!!')
             self.write_reset_score()
             return False
@@ -287,7 +291,7 @@ class ThresholdingCallback(TrainerCallback):
         file_path = os.path.join(dir_path, f'valid_dist.pt')
         torch.save(storage['score_dist'], file_path)
         storage['score_dist'] = []
-                
+        
     def list_to_tensor(
         self,
         lists:list
@@ -352,7 +356,7 @@ class ThresholdingCallback(TrainerCallback):
         cls.storage['prob'].extend(prob)
 
         cls.storage['score_dist'].extend(buffer.get('score_dist', []))
-        
+
         exact_match = kwargs.get('exact_match', True)
 
         pos_idx, neg_idx = [], []

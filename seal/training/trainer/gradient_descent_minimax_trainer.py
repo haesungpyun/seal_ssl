@@ -1143,8 +1143,8 @@ class GradientDescentMinimaxTrainer(Trainer):
                 logger.info(
                     f"Remaining Time in Next Epoch: {str(next_epoch_remain_time)} "
                 )
-                if next_epoch_remain_time.days < 0:
-                    raise RuntimeError
+                #if next_epoch_remain_time.days < 0:
+                 #   raise RuntimeError
         else:
             epoch = self._num_epochs - 1
 
