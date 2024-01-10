@@ -1,0 +1,517 @@
+{
+    "type": {
+        "value": "train_test_log_to_wandb"
+    },
+    "dataset_reader.type": {
+        "desc": null,
+        "value": "nyt"
+    },
+    "dataset_reader.tokenizer.type": {
+        "desc": null,
+        "value": "pretrained_transformer"
+    },
+    "dataset_reader.tokenizer.max_length": {
+        "desc": null,
+        "value": 512
+    },
+    "dataset_reader.tokenizer.model_name": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "dataset_reader.token_indexers.x.type": {
+        "desc": null,
+        "value": "pretrained_transformer"
+    },
+    "dataset_reader.token_indexers.x.model_name": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "data_loader.batch_sampler.type": {
+        "desc": null,
+        "value": "bucket"
+    },
+    "data_loader.batch_sampler.batch_size": {
+        "desc": null,
+        "value": 16
+    },
+    "data_loader.batch_sampler.sorting_keys.0": {
+        "desc": null,
+        "value": "x"
+    },
+    "data_loader.max_instances_in_memory": {
+        "desc": null,
+        "value": 1000
+    },
+    "data_loader.num_workers": {
+        "desc": null,
+        "value": 5
+    },
+    "data_loader.start_method": {
+        "desc": null,
+        "value": "spawn"
+    },
+
+    "_wandb": {
+        "desc": null,
+        "value": {
+            "t": {
+                "1": [
+                    1,
+                    3,
+                    5,
+                    11
+                ],
+                "2": [
+                    1,
+                    3,
+                    5,
+                    11
+                ],
+                "3": [
+                    5,
+                    14
+                ],
+                "4": "3.8.2",
+                "5": "0.12.4",
+                "6": "4.8.2",
+                "8": [
+                    5
+                ]
+            },
+            "framework": "huggingface",
+            "start_time": 1649159176,
+            "cli_version": "0.12.4",
+            "is_jupyter_run": false,
+            "python_version": "3.8.2",
+            "is_kaggle_kernel": false,
+            "huggingface_version": "4.8.2"
+        }
+    },
+
+    "model.type": {
+        "desc": null,
+        "value": "multi-label-classification-with-infnet"
+    },
+    "model.inference_module.type": {
+        "desc": null,
+        "value": "multi-label-basic"
+    },
+    "model.inference_module.log_key": {
+        "desc": null,
+        "value": "inference_module"
+    },
+    "model.inference_module.loss_fn.type": {
+        "desc": null,
+        "value": "combination-loss"
+    },
+    "model.inference_module.loss_fn.log_key": {
+        "desc": null,
+        "value": "loss"
+    },
+    "model.inference_module.loss_fn.reduction": {
+        "desc": null,
+        "value": "mean"
+    },
+    "model.inference_module.loss_fn.loss_weights.0": {
+        "desc": null,
+        "value": 3
+    },
+    "model.inference_module.loss_fn.loss_weights.1": {
+        "desc": null,
+        "value": 1
+    },
+    "model.inference_module.loss_fn.constituent_losses.0.type": {
+        "desc": null,
+        "value": "multi-label-score-loss"
+    },
+    "model.inference_module.loss_fn.constituent_losses.0.log_key": {
+        "desc": null,
+        "value": "neg_nce_score"
+    },
+    "model.inference_module.loss_fn.constituent_losses.0.reduction": {
+        "desc": null,
+        "value": "none"
+    },
+    "model.inference_module.loss_fn.constituent_losses.0.normalize_y": {
+        "desc": null,
+        "value": true
+    },
+    "model.inference_module.loss_fn.constituent_losses.1.type": {
+        "desc": null,
+        "value": "multi-label-bce"
+    },
+    "model.inference_module.loss_fn.constituent_losses.1.log_key": {
+        "desc": null,
+        "value": "bce"
+    },
+    "model.inference_module.loss_fn.constituent_losses.1.reduction": {
+        "desc": null,
+        "value": "none"
+    },
+    "model.initializer.regexes.0.0": {
+        "desc": null,
+        "value": ".*feedforward._linear_layers.*weight"
+    },
+    "model.initializer.regexes.0.1.type": {
+        "desc": null,
+        "value": "kaiming_uniform"
+    },
+    "model.initializer.regexes.0.1.nonlinearity": {
+        "desc": null,
+        "value": "relu"
+    },
+    "model.initializer.regexes.1.0": {
+        "desc": null,
+        "value": ".*feedforward._linear_layers.*bias"
+    },
+    "model.initializer.regexes.1.1.type": {
+        "desc": null,
+        "value": "zero"
+    },
+    "model.loss_fn.type": {
+        "desc": null,
+        "value": "multi-label-nce-ranking-with-discrete-sampling"
+    },
+    "model.loss_fn.log_key": {
+        "desc": null,
+        "value": "nce"
+    },
+   "model.loss_fn.num_samples": {
+        "desc": null,
+        "value": 900
+    },
+    "model.loss_fn.sign": {
+        "desc": null,
+        "value": "-"
+    },
+    "model.oracle_value_function.type": {
+        "desc": null,
+        "value": "per-instance-f1"
+    },
+    "model.oracle_value_function.differentiable": {
+        "desc": null,
+        "value": false
+    },
+    "model.sampler.type": {
+        "desc": null,
+        "value": "appending-container"
+    },
+    "model.sampler.log_key": {
+        "desc": null,
+        "value": "sampler"
+    },
+    "model.score_nn.type": {
+        "desc": null,
+        "value": "multi-label-classification"
+    },
+    "model.score_nn.global_score.type": {
+        "desc": null,
+        "value": "multi-label-feedforward"
+    },
+    "model.score_nn.global_score.feedforward.activations": {
+        "desc": null,
+        "value": "softplus"
+    },
+    "model.score_nn.global_score.feedforward.hidden_dims": {
+        "desc": null,
+        "value": 600
+    },
+    "model.score_nn.global_score.feedforward.input_dim": {
+        "desc": null,
+        "value": 2109
+    },
+    "model.score_nn.global_score.feedforward.num_layers": {
+        "desc": null,
+        "value": 1
+    },
+    "model.score_nn.task_nn.type": {
+        "desc": null,
+        "value": "multi-label-text-classification"
+    },
+    "model.score_nn.task_nn.feature_network.final_dropout": {
+        "desc": null,
+        "value": 0
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.activations.0": {
+        "desc": null,
+        "value": "softplus"
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.activations.1": {
+        "desc": null,
+        "value": "softplus"
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.dropout.0": {
+        "desc": null,
+        "value": 0.1
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.dropout.1": {
+        "desc": null,
+        "value": 0
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.hidden_dims.0": {
+        "desc": null,
+        "value": 1536
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.hidden_dims.1": {
+        "desc": null,
+        "value": 768
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.input_dim": {
+        "desc": null,
+        "value": 768
+    },
+    "model.score_nn.task_nn.feature_network.feedforward.num_layers": {
+        "desc": null,
+        "value": 2
+    },
+    "model.score_nn.task_nn.feature_network.seq2vec_encoder.type": {
+        "desc": null,
+        "value": "bert_pooler"
+    },
+    "model.score_nn.task_nn.feature_network.seq2vec_encoder.pretrained_model": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "model.score_nn.task_nn.feature_network.text_field_embedder.token_embedders.x.type": {
+        "desc": null,
+        "value": "pretrained_transformer_with_adapter"
+    },
+    "model.score_nn.task_nn.feature_network.text_field_embedder.token_embedders.x.model_name": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "model.score_nn.task_nn.label_embeddings.embedding_dim": {
+        "desc": null,
+        "value": 768
+    },
+        "model.score_nn.task_nn.label_embeddings.vocab_namespace": {
+        "desc": null,
+        "value": "labels"
+    },
+
+
+    "model.task_nn.type": {
+        "desc": null,
+        "value": "multi-label-text-classification"
+    },
+    "model.task_nn.feature_network.feedforward.input_dim": {
+        "desc": null,
+        "value": 768
+    },
+    "model.task_nn.feature_network.feedforward.num_layers": {
+        "desc": null,
+        "value": 2
+    },
+    "model.task_nn.feature_network.feedforward.hidden_dims": {
+        "desc": null,
+        "value": 1024
+    },
+    "model.task_nn.feature_network.feedforward.activations.0": {
+        "desc": null,
+        "value": "softplus"
+    },
+    "model.task_nn.feature_network.feedforward.activations.1": {
+        "desc": null,
+        "value": "softplus"
+    },
+    "model.task_nn.feature_network.feedforward.dropout.0": {
+        "desc": null,
+        "value": 0.1
+    },
+    "model.task_nn.feature_network.feedforward.dropout.1": {
+        "desc": null,
+        "value": 0
+    },
+    "model.task_nn.feature_network.final_dropout": {
+        "desc": null,
+        "value": 0.1
+    },
+    "model.task_nn.feature_network.seq2vec_encoder.type": {
+        "desc": null,
+        "value": "bert_pooler"
+    },
+    "model.task_nn.feature_network.seq2vec_encoder.pretrained_model": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "model.task_nn.feature_network.text_field_embedder.token_embedders.x.type": {
+        "desc": null,
+        "value": "pretrained_transformer"
+    },
+    "model.task_nn.feature_network.text_field_embedder.token_embedders.x.model_name": {
+        "desc": null,
+        "value": "bert-base-uncased"
+    },
+    "model.task_nn.label_embeddings.embedding_dim": {
+        "desc": null,
+        "value": 1024
+    },
+    "model.task_nn.label_embeddings.vocab_namespace": {
+        "desc": null,
+        "value": "labels"
+    },
+    "train_data_path": {
+        "desc": null,
+        "value": "./data//nyt/nyt-fold-0.jsonl"
+    },
+    "validation_data_path": {
+        "desc": null,
+        "value": "./data//nyt/nyt-fold-6.jsonl"
+    },
+    "test_data_path": {
+        "desc": null,
+        "value": "./data//nyt/nyt-fold-8.jsonl"
+    },
+    "trainer.type": {
+        "desc": null,
+        "value": "gradient_descent_minimax"
+    },
+    "trainer.callbacks.0": {
+        "desc": null,
+        "value": "track_epoch_callback"
+    },
+    "trainer.callbacks.1": {
+        "desc": null,
+        "value": "slurm"
+    },
+    "trainer.callbacks.2.type": {
+        "desc": null,
+        "value": "wandb_allennlp"
+    },
+    "trainer.callbacks.2.watch_model": {
+        "desc": null,
+        "value": false
+    },
+    "trainer.callbacks.2.save_model_archive": {
+        "desc": null,
+        "value": false
+    },
+    "trainer.callbacks.2.sub_callbacks.0.type": {
+        "desc": null,
+        "value": "log_best_validation_metric"
+    },
+    "trainer.callbacks.2.sub_callbacks.0.priority": {
+        "desc": null,
+        "value": 100
+    },
+    "trainer.checkpointer.keep_most_recent_by_count": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.cuda_device": {
+        "desc": null,
+        "value": 0
+    },
+    "trainer.grad_norm.score_nn": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.grad_norm.task_nn": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.inner_mode": {
+        "desc": null,
+        "value": "score_nn"
+    },
+    "trainer.learning_rate_schedulers.task_nn.type": {
+        "desc": null,
+        "value": "reduce_on_plateau"
+    },
+    "trainer.learning_rate_schedulers.task_nn.factor": {
+        "desc": null,
+        "value": 0.5
+    },    
+    "trainer.learning_rate_schedulers.task_nn.mode": {
+        "desc": null,
+        "value": "max"
+    },
+    "trainer.learning_rate_schedulers.task_nn.patience": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.learning_rate_schedulers.task_nn.verbose": {
+        "desc": null,
+        "value": true
+    },
+    "trainer.num_epochs": {
+        "desc": null,
+        "value": 300
+    },
+    "trainer.num_steps.task_nn": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.num_steps.score_nn": {
+        "desc": null,
+        "value": 1
+    },
+    "trainer.optimizer.optimizers.score_nn.type": {
+        "desc": null,
+        "value": "huggingface_adamw"
+    },
+    "trainer.optimizer.optimizers.score_nn.lr": {
+        "desc": null,
+        "value": 0.0001
+    },
+    "trainer.optimizer.optimizers.score_nn.weight_decay": {
+        "desc": null,
+        "value": 0.0001
+    },
+    "trainer.optimizer.optimizers.task_nn.type": {
+        "desc": null,
+        "value": "huggingface_adamw"
+    },
+    "trainer.optimizer.optimizers.task_nn.lr": {
+        "desc": null,
+        "value": 0.00001
+    },
+    "trainer.optimizer.optimizers.task_nn.weight_decay": {
+        "desc": null,
+        "value": 0.0001
+    },
+    "trainer.patience": {
+        "desc": null,
+        "value": 4
+    },    
+    "trainer.validation_metric": {
+        "desc": null,
+        "value": "+fixed_f1"
+    },
+    "vocabulary.type": {
+        "desc": null,
+        "value": "from_files"
+    },
+    "vocabulary.directory": {
+        "desc": null,
+        "value": "./data//nyt/bert_vocab"
+    },
+    "evaluate_on_test": {
+        "desc": null,
+        "value": true
+    },
+    "env.ff_hidden": {
+        "desc": null,
+        "value": 1024
+    },
+    "env.weight_decay": {
+        "desc": null,
+        "value": 0.0001
+    },
+    "env.task_nn_dropout_10x": {
+        "desc": null,
+        "value": 1
+    },
+    "env.score_loss_weight": {
+        "desc": null,
+        "value": 3
+    },
+    "env.score_nn_dropout_10x": {
+        "desc": null,
+        "value": 1
+    },
+    "env.global_score_hidden_dim": {
+        "desc": null,
+        "value": 600
+    }
+}
