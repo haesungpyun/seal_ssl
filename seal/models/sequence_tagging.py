@@ -1,5 +1,6 @@
+import copy
 import logging
-from typing import Any, Optional, Dict, List, Tuple
+from typing import Any, Optional, Dict, List, Tuple, Union
 from overrides import overrides
 import torch
 import torch.nn as nn
@@ -29,6 +30,7 @@ from allennlp_models.structured_prediction.metrics.srl_eval_scorer import (
     SrlEvalScorer,
     DEFAULT_SRL_EVAL_PATH,
 )
+from seal.training.callbacks.write_read_scores import ThresholdingCallback
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,11 @@ class SequenceTaggingModel(ScoreBasedLearningModel):
         labels = F.one_hot(labels, num_classes=self.num_tags)
 
         return labels
+
+    @overrides
+    def make_unlabel_y(self, label)->torch.Tensor:
+        assert len(label.shape) == 2
+        return label.unsqueeze(-1).expand(-1, -1, self.vocab.get_vocab_size('labels'))
 
     @overrides
     def unsqueeze_labels(self, labels: torch.Tensor) -> torch.Tensor:
@@ -124,6 +131,7 @@ class SequenceTaggingModel(ScoreBasedLearningModel):
             ]
         else:  # There is no batch dimension.
             predictions_list = [all_predictions]
+            raise ValueError
 
         wordpiece_tags: List[List[str]] = []
         word_tags: List[List[str]] = []
@@ -291,6 +299,13 @@ class SequenceTaggingModel(ScoreBasedLearningModel):
     constructor="from_partial_objects",
 )
 class NERModel(SequenceTaggingModel):
+
+    def __init__(
+        self,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+
     @overrides
     def instantiate_metrics(self) -> None:
         self._f1_metric = SpanBasedF1Measure(
@@ -311,6 +326,25 @@ class NERModel(SequenceTaggingModel):
         _forward_args["labels"] = kwargs.pop("tags")
         _forward_args["meta"] = kwargs.pop("metadata")
         _forward_args["buffer"]["meta"] = _forward_args["meta"]
+
+
+        task = kwargs.get("task") 
+        # Check labeled data
+        if task is None:  # if not multi-task
+            if _forward_args["meta"][0].get("data_type") is None: # if unlabeled data, should pass data_type from data_reader
+                task = ["labeled"] * len(_forward_args["meta"])
+            else:
+                task = []
+                for meta in _forward_args["meta"]:
+                    task.append(meta.get('data_type'))
+
+        _forward_args["buffer"]["task"] = task
+        
+        score_name = self.thresholding.get("score_conf", {'score_name':None}).get('score_name')
+        _forward_args["buffer"]["score_name"] = score_name
+        _forward_args["buffer"]["score"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+        _forward_args["buffer"]["prob"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+
 
         return {**_forward_args, **kwargs}
 
@@ -357,12 +391,77 @@ class NERModel(SequenceTaggingModel):
         self._f1_metric(prediction_tensor, labels_indices, mask)
         self._accuracy(prediction_tensor, labels_indices, mask)
 
+        # ThresholdingCallback(self.serialization_dir).save_to_storage(
+        #         score_conf=self.thresholding.get('score_conf'),
+        #         buffer=buffer,
+        #         predictions=word_tags,
+        #         ground_truth=labels,
+        #     ) 
+
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         f1_dict = self._f1_metric.get_metric(reset=reset)
         metrics = {x: y for x, y in f1_dict.items() if "overall" in x}
         metrics["accuracy"] = self._accuracy.get_metric(reset=reset)
 
         return metrics
+
+    @overrides
+    def pseudo_labeling(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_pseudo_labeling:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        if not use_pseudo_labeling:
+            return labels
+        else:
+            with torch.no_grad():
+                if y_hat.numel() == 0:
+                    return labels
+            
+                if soft_label:
+                    return y_hat.squeeze(1)
+
+                mask = buffer.get("mask")
+                assert mask is not None
+                assert buffer.get("meta") is not None
+                assert len(y_hat.shape) == 4
+                
+                (
+                    _, _, _, wordpiece_ids,
+                ) = self.constrained_decode(
+                    y_hat.squeeze(1), mask, buffer.get("wordpiece_offsets")
+                )
+                
+                sequence_lengths = get_lengths_from_binary_sequence_mask(
+                    mask
+                ).data.tolist()  # list with seq len for each instance in the batch.
+
+                new_ids = []
+                for (ids, seq_len) in zip(wordpiece_ids, sequence_lengths):
+                    ids += [0 for _ in range(seq_len, labels.size(1))]
+                    ids = F.one_hot(torch.tensor(ids, dtype=torch.int64, device=y_hat.device), self.num_tags)
+                    new_ids.append(ids)
+                
+                pseudo_labels = torch.stack(new_ids).to(y_hat.device)
+                
+                if use_ls: 
+                    pseudo_labels = pseudo_labels.float()
+                    pseudo_labels = pseudo_labels*(1- self.alpha) + y_hat.squeeze(1)*self.alpha            
+
+            return pseudo_labels
+    
+    @overrides
+    def reconstruct_inputs(self, x, filtered_batch):
+        x_conf = copy.deepcopy(x)
+        for key, value in x['tokens'].items():
+            x_conf['tokens'][key] = value[filtered_batch]
+        return x_conf
+
 
 
 @Model.register(
@@ -437,6 +536,23 @@ class SRLModel(SequenceTaggingModel):
             raise ValueError
         _forward_args["buffer"]["meta"] = metadata
 
+        task = kwargs.get("task") 
+        # Check labeled data
+        if task is None:  # if not multi-task
+            if metadata[0].get("data_type") is None: # if unlabeled data, should pass data_type from data_reader
+                task = ["labeled"] * len(metadata)
+            else:
+                task = []
+                for meta in metadata:
+                    task.append(meta.get('data_type'))
+
+        _forward_args["buffer"]["task"] = task
+        
+        score_name = self.thresholding.get("score_conf", {'score_name':None}).get('score_name')
+        _forward_args["buffer"]["score_name"] = score_name
+        _forward_args["buffer"]["score"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+        _forward_args["buffer"]["prob"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+
         if self.decode_on_wordpieces:
 
             if len(metadata) > 0:
@@ -489,6 +605,12 @@ class SRLModel(SequenceTaggingModel):
                 batch_conll_predicted_tags,
                 batch_conll_gold_tags,
             )
+            ThresholdingCallback(self.serialization_dir).save_to_storage(
+                score_conf=self.thresholding.get('score_conf'),
+                buffer=buffer,
+                predictions=word_tags,
+                ground_truth=batch_bio_gold_tags,
+            )
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         metric_dict = self.span_metric.get_metric(reset=reset)
@@ -496,3 +618,60 @@ class SRLModel(SequenceTaggingModel):
         # we only really care about the overall metrics, so we filter for them here.
 
         return {x: y for x, y in metric_dict.items() if "overall" in x}
+
+    @overrides
+    def pseudo_labeling(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_pseudo_labeling:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        if not use_pseudo_labeling:
+            return labels
+        else:
+            with torch.no_grad():
+                if y_hat.numel() == 0:
+                    return labels
+            
+                if soft_label:
+                    return y_hat.squeeze(1)
+
+                mask = buffer.get("mask")
+                assert mask is not None
+                assert buffer.get("meta") is not None
+                assert len(y_hat.shape) == 4
+                
+                (
+                    _, _, _, wordpiece_ids,
+                ) = self.constrained_decode(
+                    y_hat.squeeze(1), mask, buffer.get("wordpiece_offsets")
+                )
+                
+                sequence_lengths = get_lengths_from_binary_sequence_mask(
+                    mask
+                ).data.tolist()  # list with seq len for each instance in the batch.
+
+                new_ids = []
+                for (ids, seq_len) in zip(wordpiece_ids, sequence_lengths):
+                    ids += [0 for _ in range(seq_len, labels.size(1))]
+                    ids = F.one_hot(torch.tensor(ids, dtype=torch.int64, device=y_hat.device), self.num_tags)
+                    new_ids.append(ids)
+                
+                pseudo_labels = torch.stack(new_ids).to(y_hat.device)
+                
+                if use_ls: 
+                    pseudo_labels = pseudo_labels.float()
+                    pseudo_labels = pseudo_labels*(1- self.alpha) + y_hat.squeeze(1)*self.alpha            
+
+            return pseudo_labels
+    
+    @overrides
+    def reconstruct_inputs(self, x, filtered_batch):
+        x_conf = copy.deepcopy(x)
+        for key, value in x['tokens'].items():
+            x_conf['tokens'][key] = value[filtered_batch]
+        return x_conf

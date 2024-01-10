@@ -58,6 +58,11 @@ class WeizmannHorseSegCELoss(Loss):
         **kwargs: Any,
     ) -> torch.Tensor:
 
+        # all the labels are -100 -> unlabeled data (no pseudo_labeling, you can delete this condition by editing CE Loss to ignore some tokens or value)
+        # y_hat/labels is empty means in select_confidence(thresholding method), all the samples are filtered out
+        if labels.sum() <= -100 * labels.numel() or y_hat.numel() == 0 or labels.numel() == 0:
+            return torch.zeros((1,1) , requires_grad=True).to(y_hat.device)
+
         loss = self.loss_fn(y_hat, labels.squeeze(-3).long()) # (b, h, w)
         loss = loss.view(-1, loss.size()[-2]*loss.size()[-1]).mean(dim=-1) # (b,)
 

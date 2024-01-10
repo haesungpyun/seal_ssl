@@ -76,9 +76,17 @@ class WeizmannHorseSegInferenceNetSampler(InferenceNetSampler):
         else: # train
             loss = self.loss_fn(x, labels, y_hat, y_cost_aug, buffer)
 
+        y_hat, y_cost_aug, loss = (
+            self.normalize(y_hat), # (b, c=1 or 2, h, w) or (b, 36, c=1 or 2, 24, 24), no num_sample dim
+            self.normalize(y_cost_aug),
+            loss
+        )
+
+        buffer["prob"] = y_hat.max(dim=-3)[0].mean(dim=(-1,-2))
+
         return (
-                   self.normalize(y_hat), # (b, c=1 or 2, h, w) or (b, 36, c=1 or 2, 24, 24), no num_sample dim
-                   self.normalize(y_cost_aug),
+                   y_hat, # (b, c=1 or 2, h, w) or (b, 36, c=1 or 2, 24, 24), no num_sample dim
+                   y_cost_aug,
                    loss
         )
 

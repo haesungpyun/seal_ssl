@@ -309,6 +309,8 @@ class GradientDescentMinimaxTrainer(Trainer):
         run_confidence_checks: bool = True,
         num_steps: Dict[MODE_LITERALS_TYPE, int] = None,
         inner_mode: MODE_LITERALS_TYPE = ModelMode.UPDATE_SCORE_NN.value,
+        pre_training: int = 0,
+        filter_unlab: dict = {"use_fu":False},
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -411,6 +413,8 @@ class GradientDescentMinimaxTrainer(Trainer):
             self._num_steps = {ModelMode(k): v for k, v in num_steps.items()}
         self.inner_mode: ModelMode = ModelMode(inner_mode)
         self.exit_code = 0
+        self.pre_training = pre_training
+        self.filter_unlab = filter_unlab
 
     def num_steps(self, mode: ModelMode) -> int:
         return self._num_steps[mode]
@@ -571,6 +575,8 @@ class GradientDescentMinimaxTrainer(Trainer):
 
         if batch_inner_loss is not None:
             metrics["batch_inner_loss"] = batch_inner_loss
+        if batch_outer_loss is not None:
+            metrics["batch_outer_loss"] = batch_outer_loss
         metrics["inner_loss"] = (
             float(total_inner_loss / num_batches) if num_batches > 0 else 0.0
         )
@@ -649,6 +655,11 @@ class GradientDescentMinimaxTrainer(Trainer):
         done_early = False
 
         for batch_group in batch_group_generator_tqdm:
+            if epoch < self.pre_training:
+                for i, batch in enumerate(batch_group):
+                    if batch.get('task') is not None and 'unlabeled' in batch.get("task"):
+                        batch_group.pop(i)
+                    
             if done_early:
                 break
 
@@ -737,8 +748,6 @@ class GradientDescentMinimaxTrainer(Trainer):
                 batch_group_outer_loss,
                 batch_reg_loss,
                 self._batches_in_epoch_completed,
-                world_size=self._world_size,
-                cuda_device=self.cuda_device,
             )
 
             for callback in self._callbacks:
@@ -785,8 +794,6 @@ class GradientDescentMinimaxTrainer(Trainer):
                 batch_reg_loss=None,
                 num_batches=self._batches_in_epoch_completed,
                 reset=True,
-                world_size=self._world_size,
-                cuda_device=self.cuda_device,
             )
 
         for (worker, memory) in cpu_memory_usage:
@@ -870,8 +877,6 @@ class GradientDescentMinimaxTrainer(Trainer):
                     val_batch_loss,
                     val_batch_reg_loss,
                     batches_this_epoch,
-                    world_size=self._world_size,
-                    cuda_device=self.cuda_device,
                 )
 
                 description = training_util.description_from_metrics(
@@ -894,7 +899,7 @@ class GradientDescentMinimaxTrainer(Trainer):
                         is_training=False,
                         is_primary=self._primary,
                     )
-
+    
             return val_loss, val_reg_loss, batches_this_epoch
         finally:
             # Now restore the original parameter values.
@@ -1009,8 +1014,6 @@ class GradientDescentMinimaxTrainer(Trainer):
                         batch_reg_loss=None,
                         num_batches=num_batches,
                         reset=True,
-                        world_size=self._world_size,
-                        cuda_device=self.cuda_device,
                     )
 
                     # Check validation metric for early stopping
@@ -1132,6 +1135,16 @@ class GradientDescentMinimaxTrainer(Trainer):
                 logger.info(
                     "Estimated training time remaining: %s", formatted_time
                 )
+                # Time limit is 12hour in Server, so stop the training considering remaining time for next epoch
+                # Stop Early to Save and Load model weight without overlapped training iterations
+                next_epoch_remain_time = datetime.timedelta(
+                    seconds= (12*60*60 - 10*60 - training_elapsed_time - time_per_epoch )
+                )
+                logger.info(
+                    f"Remaining Time in Next Epoch: {str(next_epoch_remain_time)} "
+                )
+                if next_epoch_remain_time.days < 0:
+                    raise RuntimeError
         else:
             epoch = self._num_epochs - 1
 
@@ -1205,7 +1218,10 @@ class GradientDescentMinimaxTrainer(Trainer):
         if self._checkpointer is None:
             return
 
-        model_state, training_state = self._checkpointer.load_checkpoint()
+        if self._checkpointer.load_checkpoint() is None:
+            model_state, training_state = {}, {}
+        else:
+            model_state, training_state = self._checkpointer.load_checkpoint()
 
         if len(model_state) <= 0 and len(training_state) <= 0:
             self._start_after_epochs_completed = 0

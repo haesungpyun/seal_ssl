@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import warnings
 from typing import (
     List,
@@ -46,6 +47,10 @@ class InferenceNetSampler(Sampler):
         score_nn: ScoreNN,
         cost_augmented_layer: Optional[CostAugmentedLayer] = None,
         oracle_value_function: Optional[OracleValueFunction] = None,
+        task_thresholding: Dict = {"use_th":False},
+        use_self_training:bool = False,
+        task_soft_label: bool = False,
+        task_label_smoothing: Dict[str, Any] = {},
         **kwargs: Any,
     ):
         assert ScoreNN is not None
@@ -59,6 +64,13 @@ class InferenceNetSampler(Sampler):
         self.loss_fn = loss_fn
 
         self.logging_children.append(self.loss_fn)
+
+        # Task net parameters for each method
+        self.thresholding = task_thresholding
+        self.use_self_training = use_self_training
+        self.soft_label = task_soft_label
+        self.use_ls = task_label_smoothing.get('use_ls', False)
+        self.alpha = task_label_smoothing.get('alpha', 0.0)
 
     @property
     def is_normalized(self) -> bool:
@@ -136,6 +148,69 @@ class InferenceNetSampler(Sampler):
             y_cost_aug = None
 
         return y_inf, y_cost_aug
+
+    def self_training(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_self_training:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+    
+    def select_confident(
+        self,
+        x: Any,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        thresholding:Dict,
+        **kwargs: Any,
+    ) -> None:
+        if not thresholding['use_th']:
+            return x, y_hat, buffer
+        else:
+            max_confidence = y_hat.max(dim=-1)[0].mean(dim=-1)
+            
+            if thresholding.get('method') == "local_mean":
+                filtered_batch = (max_confidence >= max_confidence.mean()).nonzero(as_tuple=True)[0]
+            
+            elif thresholding.get('method') == "local_median":
+                filtered_batch = (max_confidence >= max_confidence.median()).nonzero(as_tuple=True)[0]
+            
+            else: # self.thresholding.method == "score"
+                max_confidence = buffer.get(buffer.get('score_name'))
+                threshold = thresholding.get('score_conf').get('threshold')
+                if not isinstance(threshold, torch.Tensor): 
+                    threshold = torch.tensor([threshold], device=max_confidence.device)
+                else:
+                    threshold = threshold.to(max_confidence.device)
+            filtered_batch = (max_confidence >= threshold).nonzero(as_tuple=True)[0].unique()
+        
+            y_hat_conf = y_hat[filtered_batch]
+            
+            x_conf = self.reconstruct_inputs(x, filtered_batch)
+    
+            buffer_conf = copy.deepcopy(buffer)
+            for key in buffer.keys():
+                value = buffer.get(key)
+                if type(value) == torch.Tensor:
+                    buffer_conf[key] = value[filtered_batch]
+                elif type(value) == list:
+                    buffer_conf[key] = [value[i.item()] for i in filtered_batch]
+                else:
+                    continue
+            return x_conf, y_hat_conf, buffer_conf
+    
+    def reconstruct_inputs(
+        self,
+        x,
+        filtered_batch,
+    ):
+        raise NotImplementedError
+
 
 
 InferenceNetSampler.register("inference-network-unnormalized")(

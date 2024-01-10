@@ -1,4 +1,6 @@
+import copy
 from typing import List, Tuple, Union, Dict, Any, Optional, overload
+from overrides import overrides
 from seal.modules.sampler import (
     Sampler,
     SamplerModifier,
@@ -41,6 +43,88 @@ class MultiLabelNormalized(InferenceNetSampler):
     @property
     def different_training_and_eval(self) -> bool:
         return False
+    
+    def forward(
+        self,
+        x: Any,
+        labels: Optional[
+            torch.Tensor
+        ],  #: If given will have shape (batch, ...)
+        buffer: Dict,
+        **kwargs: Any,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+
+        y_hat, y_cost_aug = self._get_values(
+            x, labels, buffer
+        )  # (batch_size, 1, ...) Unnormalized
+        
+        if labels is not None:    
+            x_, labels_, y_hat_, buffer_ = x.clone(), labels.clone(), y_hat.clone(), buffer
+            if "unlabeled" in buffer.get('task'):
+                x_, y_hat_, buffer_ = self.select_confident(
+                    x_, y_hat_, buffer_, self.thresholding,
+                )
+                labels_ = self.self_training(
+                    labels_, y_hat_, buffer_,
+                    self.use_self_training, self.soft_label, self.use_ls
+                )
+
+            loss = self.loss_fn(
+                x_, labels_.unsqueeze(1), y_hat_, y_cost_aug, buffer_,
+            ) # labels_.unsqueeze(1) (batch, num_samples or 1, ...)
+        else:
+            loss = None
+
+        y_hat, y_hat_aug, loss = self.normalize(y_hat), self.normalize(y_cost_aug), loss
+        
+        buffer["prob"] = y_hat.max(dim=-1)[0].mean(dim=-1)
+        
+        return y_hat, y_hat_aug, loss
+    
+    @overrides
+    def self_training(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_self_training:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        if not use_self_training:
+            return labels
+        else:
+            with torch.no_grad():
+                if y_hat.numel() == 0:
+                    return labels
+            
+                if soft_label:
+                    return self.normalize(y_hat).squeeze(1)
+
+                assert buffer.get("meta") is not None
+                assert len(y_hat.shape) == 3
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                
+                pseudo_labels = torch.where(y_hat >= 0.5, 1.0, 0.0).to(device)
+                
+                if use_ls: 
+                    pseudo_labels = pseudo_labels.float()
+                    assert pseudo_labels.size() == y_hat.size()
+                    pseudo_labels = pseudo_labels*(1- self.alpha) + y_hat*self.alpha  
+            
+            return pseudo_labels.squeeze(1)
+
+    @overrides
+    def reconstruct_inputs(self, x, filtered_batch):
+        x_conf = copy.deepcopy(x)
+        try:
+            for key, value in x['x'].items():
+                x_conf['x'][key] = value[filtered_batch]
+        except:
+            x_conf = x[filtered_batch]  
+        return x_conf  
+
 
 
 @Sampler.register("multi-label-inference-net-normalized-or-sampled")

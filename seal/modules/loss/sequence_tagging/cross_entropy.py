@@ -12,6 +12,8 @@ from seal.modules.oracle_value_function import (
 )
 from seal.modules.score_nn import ScoreNN
 
+import logging
+logger = logging.getLogger(__name__)
 
 def _normalize(y: torch.Tensor) -> torch.Tensor:
     return torch.softmax(y, dim=-1)
@@ -30,6 +32,11 @@ class SequenceTaggingMaskedCrossEntropyWithLogitsLoss(Loss):
         buffer: Dict = None,
         **kwargs: Any,
     ) -> torch.Tensor:
+        
+        # all the labels are -100 -> unlabeled data (no pseudo_labeling, you can delete this condition by editing CE Loss to ignore some tokens or value)
+        # y_hat/labels is empty means in select_confidence(thresholding method), all the samples are filtered out
+        if labels.sum() <= -100 * labels.numel() or y_hat.numel() == 0 or labels.numel() == 0:
+            return torch.zeros((1,1) , requires_grad=True).to(y_hat.device)            
 
         assert labels is not None
         mask = buffer.get("mask") if buffer is not None else None
@@ -48,10 +55,10 @@ class SequenceTaggingMaskedCrossEntropyWithLogitsLoss(Loss):
         labels_indices = torch.argmax(labels, dim=-1)  # (batch, seq_len)
 
         return util.sequence_cross_entropy_with_logits(
-            y_hat,  # type: ignore
-            labels_indices,  # type:ignore
-            mask,
-            average=None,  # type: ignore
+            y_hat,  # type: ignore (batch, seq_len, num_tags)
+            labels_indices,  # type:ignore (batch, seq_len)
+            mask,   # (batch, seq_len)
+            average=None,  # type: ignore   
         ).unsqueeze(
             1
         )  # (batch, 1)

@@ -76,6 +76,11 @@ class NCELoss(Loss):
     ) -> torch.Tensor:
         assert y_hat.shape[1] == 1
         assert labels is not None
+        
+        # return tensor 0 when unlabeled data without pseudo_labelinglation
+        if labels.sum() <= -100 * labels.numel() or y_hat.numel() == 0 or labels.numel() == 0:    
+            return torch.zeros((1,1) , requires_grad=True).to(y_hat.device)
+
         loss_unreduced = self.compute_loss(
             x, y_hat, labels, buffer
         )  # (batch, num_samples)
@@ -84,11 +89,23 @@ class NCELoss(Loss):
 
 
 class NCERankingLoss(NCELoss):
-    def __init__(self, use_scorenn: bool = True, **kwargs: Any) -> None:
+    def __init__(self, 
+                use_scorenn: bool = True, 
+                loss_weights:Dict[str, float]=None, 
+                loss_scaling: Dict[str, Any] = {"use_scaling": False},  # {"use_scaling": T/F, "params": [numer, denom1, denom2] } 
+                **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.use_scorenn = use_scorenn
         self.cross_entropy = torch.nn.CrossEntropyLoss(reduction="none")
-
+        if loss_weights is None:
+            self.loss_weights = {'labeled' : 1.0, 'unlabeled': 1.0}
+        else:
+            self.loss_weights = loss_weights
+        
+        self.loss_scaling = loss_scaling
+        if loss_scaling.get("use_scaling"):
+            self.loss_scaling["params"] = [0, 1, 0]
+        
     def compute_loss(
         self,
         x: torch.Tensor,
@@ -96,6 +113,12 @@ class NCERankingLoss(NCELoss):
         labels: torch.Tensor,  # (batch, 1, ...)
         buffer: Dict,
     ) -> torch.Tensor:
+        
+        scalar = torch.ones(1,).to(y_hat.device)
+        if self.loss_scaling.get("use_scaling"):
+            numer, denom1, denom2 = self.loss_scaling["params"]
+            scalar = (y_hat.max(dim=-1)[0].mean(dim=-1) - numer) / (denom1 - denom2)
+        
         samples = self.sample(y_hat).to(
             dtype=y_hat.dtype
         )  # (batch, num_samples, ...)
@@ -121,4 +144,4 @@ class NCERankingLoss(NCELoss):
             ),  # (batch,)
         )
 
-        return ranking_loss
+        return ranking_loss * scalar

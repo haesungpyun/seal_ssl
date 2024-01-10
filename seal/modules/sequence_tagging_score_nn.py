@@ -56,5 +56,7 @@ class SequenceTaggingScoreNN(ScoreNN):
         local_score = self.compute_local_score(x, y, buffer=buffer)
 
         global_score = self.compute_global_score(y, buffer)
-
-        return local_score + global_score
+        
+        buffer["score"] = (local_score + global_score)
+        
+        return (local_score + global_score)

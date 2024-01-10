@@ -49,4 +49,5 @@ class WeizmannHorseSegScoreNN(ScoreNN):
         z = self.dropout(z)
         z = F.relu(self.fc2(z))
         z = self.fc3(z)
+        buffer["score"] = z.view(*size_prefix)
         return z.view(*size_prefix) # (b, n or 1+n) for scorenn training and (b,) during tasknn training

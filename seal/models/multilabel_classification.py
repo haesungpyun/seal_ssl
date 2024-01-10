@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import List, Tuple, Union, Dict, Any, Optional
 from overrides import overrides
@@ -15,6 +16,7 @@ from seal.metrics import (
     MultilabelClassificationNormalizedDiscountedCumulativeGain,
     MultilabelClassificationRankBiasedOverlap,
 )
+from seal.training.callbacks.write_read_scores import ThresholdingCallback
 from .base import ScoreBasedLearningModel
 from ..modules.oracle_value_function.manhatten_distance import (
     ManhattanDistanceValueFunction,
@@ -63,6 +65,11 @@ class MultilabelClassification(ScoreBasedLearningModel):
 
         return y.squeeze(1)
 
+    @overrides
+    def make_unlabel_y(self, label)->torch.Tensor:
+        assert len(label.shape) == 1
+        return label.unsqueeze(-1).expand(-1, self.vocab.get_vocab_size('labels'))
+
     @torch.no_grad()
     @overrides
     def calculate_metrics(  # type: ignore
@@ -87,6 +94,16 @@ class MultilabelClassification(ScoreBasedLearningModel):
         self.relaxed_f1(y_hat_n, labels)
         self.f1(y_hat_n, labels)
 
+        # save scores to storage in validation session
+        if not self.training:
+            ThresholdingCallback(self.serialization_dir).save_to_storage(
+                score_conf=self.thresholding.get('score_conf'),
+                buffer=buffer,
+                predictions=y_hat.tolist(),
+                ground_truth=labels.tolist(),
+                exact_match=False
+            )
+
     def get_true_metrics(self, reset: bool = False) -> Dict[str, float]:
         metrics = {
             "MAP": self.map.get_metric(reset),
@@ -96,6 +113,87 @@ class MultilabelClassification(ScoreBasedLearningModel):
         }
 
         return metrics
+
+    # construct args for multi-task forward considering unlabeled data and labeled data
+    # dataset reader should pass data_type in metadata
+    @overrides
+    def construct_args_for_forward(self, **kwargs: Any) -> Dict:
+        kwargs["buffer"] = self.initialize_buffer(**kwargs)
+
+        metadata = kwargs.get("meta")
+        kwargs['buffer']['meta'] = metadata     
+
+        task = kwargs.get("task") 
+        # Check labeled data
+        if task is None:  # if not multi-task
+            if metadata[0].get("data_type") is None: # if unlabeled data, should pass data_type from data_reader
+                task = ["labeled"] * len(metadata)
+            else:
+                task = []
+                for meta in metadata:
+                    task.append(meta.get('data_type'))
+                
+        kwargs['buffer']['task'] = task     
+        
+        if "unlabeled" in task:
+            try:
+                kwargs['labels'] = torch.stack(kwargs.pop('labels')).squeeze()
+            except:
+                kwargs['labels'] = kwargs.pop('labels')
+
+        score_name = self.thresholding.get("score_conf", {'score_name':None}).get('score_name')
+        kwargs["buffer"]["score_name"] = score_name
+        # this is for the case when we want to analysis the score/prob distribution of the unlabeled data
+        kwargs["buffer"]["score"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+        kwargs["buffer"]["prob"] = torch.FloatTensor((float('-inf'),)).repeat(len(task))
+
+        return kwargs
+    
+    @overrides
+    def pseudo_labeling(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_pseudo_labeling:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        if not use_pseudo_labeling:
+            return labels
+        else:
+            with torch.no_grad():
+                if y_hat.numel() == 0:
+                    return labels
+            
+                if soft_label:
+                    return y_hat.squeeze(1)
+
+                assert buffer.get("meta") is not None
+                assert len(y_hat.shape) == 3
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                
+                pseudo_labels = torch.where(y_hat >= 0.5, 1.0, 0.0).to(device)
+                
+                if use_ls: 
+                    pseudo_labels = pseudo_labels.float()
+                    assert pseudo_labels.size() == y_hat.size()
+                    pseudo_labels = pseudo_labels*(1- self.alpha) + y_hat*self.alpha  
+            
+            return pseudo_labels.squeeze(1)
+
+    @overrides
+    def reconstruct_inputs(self, x, filtered_batch):
+        x_conf = copy.deepcopy(x)
+        try:
+            for key, value in x['x'].items():
+                x_conf['x'][key] = value[filtered_batch]
+        except:
+            x_conf = x[filtered_batch]  
+        return x_conf  
+        
+    
 
 
 @Model.register(

@@ -1,4 +1,5 @@
 from typing import List, Tuple, Union, Dict, Any, Optional, overload
+from typing_extensions import override
 from seal.modules.sampler import (
     Sampler,
     BasicSampler,
@@ -39,3 +40,34 @@ class MultilabelClassificationBasicSampler(BasicSampler):
     @property
     def different_training_and_eval(self) -> bool:
         return False
+
+    @override
+    def forward(
+        self,
+        x: torch.Tensor,
+        labels: Optional[torch.Tensor],
+        buffer: Dict,
+        **kwargs: Any,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+
+        logits = self.inference_nn(x).unsqueeze(
+            1
+        )  # unormalized logits (batch, 1, ...)
+
+        if labels is not None:  # Combination loss
+            # compute loss for logging.
+            loss = self.loss_fn(
+                x,
+                labels.unsqueeze(1),  # (batch, num_samples or 1, ...)
+                logits,
+                logits,
+                buffer,
+            )
+        else:
+            loss = None
+
+        logits, logits, loss = self.normalize(logits), self.normalize(logits), loss
+        
+        buffer["prob"] = logits.max(dim=-1)[0].mean(dim=-1)
+        
+        return logits, logits, loss

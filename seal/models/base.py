@@ -1,3 +1,4 @@
+import copy
 from typing import (
     List,
     Tuple,
@@ -61,6 +62,10 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         num_eval_samples: int = 10,
         regularizer: Optional[RegularizerApplicator] = None,
         initializer: Optional[InitializerApplicator] = None,
+        thresholding: Dict = {"use_th":False},  # get thresholding method config
+        use_pseudo_labeling: bool = False,  # bool for pseudo labeling (hard label)
+        soft_label: bool = False,   # bool for soft label 
+        label_smoothing: Dict[str, Any] = {},   # label smoothing config
         **kwargs: Any,
     ) -> None:
         """
@@ -125,6 +130,14 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         for n, p in self.named_parameters():
             if not ModelMode.hasattr_model_mode(p):
                 logger.warning(f"{n} does not have ModelMode set.")
+
+        # Score net methods attributes
+        self.thresholding = thresholding
+        self.use_pseudo_labeling = use_pseudo_labeling
+        self.soft_label = soft_label
+        self.use_ls = label_smoothing.get('use_ls', False)
+        self.alpha = label_smoothing.get('alpha', 0.0)
+       
 
     @classmethod
     def from_partial_objects(
@@ -312,6 +325,11 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
 
         return labels
 
+    # unsqueeze labels which is for unlabelled data
+    def make_unlabel_y(self, label)->torch.Tensor:
+        assert len(label.shape) == 1
+        return label.unsqueeze(-1).expand(-1, self.vocab.get_vocab_size('labels'))
+
     def unsqueeze_labels(self, labels: torch.Tensor) -> torch.Tensor:
         """Unsqueeze to add a samples dimension"""
 
@@ -382,8 +400,14 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         results: Dict[str, Any] = {}
         # sampler needs one-hot labels of shape (batch, ...)
 
+        # labeled data -> one-hot
+        # unlabeled data -> unsqueeze to make the same shape as one-hot
         if labels is not None:
-            labels = self.convert_to_one_hot(labels)
+            if "labeled" in buffer.get('task'):
+                labels = self.convert_to_one_hot(labels)
+            elif "unlabeled" in buffer.get('task'):
+                labels = self.make_unlabel_y(labels)
+            
         with self.inference_module.mode("inference"):
             y_pred, _, loss = self.inference_module(
                 x, labels=labels, buffer=buffer
@@ -391,7 +415,8 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         results["loss"] = loss
         results["y_pred"] = self.squeeze_y(y_pred)
 
-        if labels is not None:
+        # Do not calculate metrics for unlabeled data
+        if labels is not None and "unlabeled" not in buffer.get('task'):
             self.calculate_metrics(
                 x, labels, results["y_pred"], buffer, results
             )
@@ -419,9 +444,12 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         results: Dict[str, Any] = {}
-
-        if labels is not None:
+        # labeled data -> one-hot
+        # unlabeled data -> unsqueeze to make the same shape as one-hot
+        if labels is not None and "labeled" in buffer.get('task'):
             labels = self.convert_to_one_hot(labels)
+        elif "unlabeled" in buffer.get('task'):
+            labels = self.make_unlabel_y(labels)
 
         # generate samples
         with torch.no_grad():
@@ -430,11 +458,100 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
                     x, labels=labels, buffer=buffer
                 )
         assert labels is not None
+        
+        # initial setting for score and prob utilizing it for analysis
+        results["score"] = buffer.get("score", float('-inf'))
+        results["prob"] = buffer.get("prob", float('-inf'))
+
+        # because of reference based call, to avoid changing the original values
+        x_, labels_, y_hat_, buffer_ = x, labels, y_hat, buffer
+        if "unlabeled" in buffer.get('task'):
+            # thresholding method to filter out low confidence samples
+            x_, y_hat_, buffer_ = self.select_confident(
+                x_, y_hat_, buffer, self.thresholding,
+            )
+            # pseudo labeling method to generate pseudo labels
+            labels_ = self.pseudo_labeling(
+                labels_, y_hat_, buffer_,
+                self.use_pseudo_labeling, self.soft_label, self.use_ls
+            )
+    
+        # NCE ranking 
         loss = self.loss_fn(
-            x, self.unsqueeze_labels(labels), y_hat, y_hat_extra, buffer
+            x_, self.unsqueeze_labels(labels_), y_hat_, y_hat_extra, buffer_
         )
+        
+        # multiply its loss weight labeled data and unlabeled data
+        # loss from unlabeled data is too large, so we need to scale it down
+        if self.use_pseudo_labeling:
+            loss *= self.loss_fn.loss_weights.get(buffer.get('task')[0])
+        
         results["y_hat"] = y_hat
         results["y_hat_extra"] = y_hat_extra
         results["loss"] = loss
-
+    
         return results
+    
+    # pseudo labeling method different pseudo labeling method can be implemented here for each task
+    def pseudo_labeling(
+        self,
+        labels: torch.Tensor,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        use_pseudo_labeling:bool,
+        soft_label:bool,
+        use_ls: bool,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+    
+    def select_confident(
+        self,
+        x: Any,
+        y_hat: torch.Tensor,
+        buffer: Dict,
+        thresholding:Dict,
+        **kwargs: Any,
+    ) -> None:
+        if not thresholding['use_th']:
+            return x, y_hat, buffer
+        else:
+            max_confidence = y_hat.max(dim=-1)[0].mean(dim=-1)
+            
+            if thresholding.get('method') == "local_mean":
+                filtered_batch = (max_confidence >= max_confidence.mean()).nonzero(as_tuple=True)[0]
+            
+            elif thresholding.get('method') == "local_median":
+                filtered_batch = (max_confidence >= max_confidence.median()).nonzero(as_tuple=True)[0]
+            
+            else: # self.thresholding.method == "score"
+                max_confidence = buffer.get(buffer.get('score_name'))
+                threshold = thresholding.get('score_conf').get('threshold')
+                if not isinstance(threshold, torch.Tensor): 
+                    threshold = torch.tensor([threshold], device=max_confidence.device)
+                else:
+                    threshold = threshold.to(max_confidence.device)
+            filtered_batch = (max_confidence >= threshold).nonzero(as_tuple=True)[0].unique()
+        
+            y_hat_conf = y_hat[filtered_batch]
+            
+            x_conf = self.reconstruct_inputs(x, filtered_batch)
+    
+            buffer_conf = copy.deepcopy(buffer)
+            for key in buffer.keys():
+                value = buffer.get(key)
+                if type(value) == torch.Tensor:
+                    buffer_conf[key] = value[filtered_batch]
+                elif type(value) == list:
+                    buffer_conf[key] = [value[i.item()] for i in filtered_batch]
+                else:
+                    continue
+            return x_conf, y_hat_conf, buffer_conf
+    
+    # reconstruct inputs after filtered the batch
+    def reconstruct_inputs(
+        self,
+        x,
+        filtered_batch,
+    ):
+        raise NotImplementedError

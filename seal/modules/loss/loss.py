@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import List, Tuple, Union, Dict, Any, Optional
 from allennlp.common.registrable import Registrable
 import torch
@@ -175,6 +176,67 @@ class CombinationLoss(Loss):
         for w, l in zip(self.loss_weights[1:], losses[1:]):
             total_loss = total_loss + w * l
 
+        return total_loss
+
+# Combination loss for semi-supervised learning
+# multiply the loss by weights given in loss_weights (from config)
+@Loss.register("combination-loss-unlabeled")
+class CombinationUnlabeledLoss(Loss):
+    def __init__(
+        self,
+        constituent_losses: Union[List[Loss], Dict[str, Loss]],
+        loss_weights: Optional[Dict[str, List[float]]] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        assert len(constituent_losses) > 0, "Cannot have empty list of losses"  
+        try:
+            self.constituent_losses = torch.nn.ModuleList(constituent_losses)
+        except:
+            self.constituent_losses = torch.nn.ModuleDict(constituent_losses)
+    
+        self.loss_weights = loss_weights or {
+            key: [1.0] * len(constituent_losses)
+            for key in ['labeled', 'unlabeled']
+        }
+        
+        assert len(self.loss_weights.get("labeled")) == \
+            len(self.loss_weights.get("unlabeled")) == \
+            len(self.constituent_losses)
+            
+        # register children losses
+        for cl in self.constituent_losses:
+            self.logging_children.append(cl)
+
+    def _forward(
+        self,
+        x: Any,
+        labels: Optional[torch.Tensor],  #: shape (batch, 1, ...)
+        y_hat: torch.Tensor,  #: shape (batch, num_samples, ...)
+        y_hat_extra: Optional[
+            torch.Tensor
+        ],  # y_hat_probabilities or y_hat_cost_augmented
+        buffer: Dict,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        
+        data_type = buffer.get("task")[0]
+        
+        try:
+            loss_list = self.constituent_losses.get(data_type)
+        except:
+            loss_list = self.constituent_losses
+        
+        losses = {
+            l_.__class__.__name__: l_(x, labels, y_hat, y_hat_extra, buffer, **kwargs)
+            for l_ in loss_list
+        }
+        
+        total_loss = self.loss_weights.get(data_type)[0] * list(losses.values())[0]
+            
+        for w, l in zip(self.loss_weights.get(data_type)[1:], list(losses.values())[1:]):
+            total_loss = total_loss + w * l
+                       
         return total_loss
 
 

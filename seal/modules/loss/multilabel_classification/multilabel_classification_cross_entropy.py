@@ -2,7 +2,9 @@ from typing import List, Tuple, Union, Dict, Any, Optional
 import torch
 from seal.modules.loss import Loss
 import numpy as np
+import logging
 
+logger = logging.getLogger(__name__)
 
 @Loss.register("multi-label-bce")
 class MultiLabelBCELoss(Loss):
@@ -21,6 +23,11 @@ class MultiLabelBCELoss(Loss):
         **kwargs: Any,
     ) -> torch.Tensor:
         assert labels is not None
+
+        # all the labels are -100 -> unlabeled data (no pseudo_labeling, you can delete this condition by editing CE Loss to ignore some tokens or value)
+        # y_hat/labels is empty means in select_confidence(thresholding method), all the samples are filtered out
+        if labels.sum() <= -100 * labels.numel() or y_hat.numel() == 0 or labels.numel() == 0:    
+            return torch.zeros((1,1) , requires_grad=True).to(y_hat.device)
         loss = self.loss_fn(y_hat, labels.to(dtype=y_hat.dtype)).sum(
             dim=-1
         )  # (batch, 1,)

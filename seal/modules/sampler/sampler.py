@@ -30,7 +30,8 @@ from seal.modules.logging import (
     LoggedNPArrayNPArraySample,
 )
 import numpy as np
-
+import logging 
+logger = logging.getLogger(__name__)
 
 class Sampler(LoggingMixin, torch.nn.Module, Registrable):
     """
@@ -182,7 +183,7 @@ class BasicSampler(Sampler):
             1
         )  # unormalized logits (batch, 1, ...)
 
-        if labels is not None:
+        if labels is not None:  # Combination loss
             # compute loss for logging.
             loss = self.loss_fn(
                 x,

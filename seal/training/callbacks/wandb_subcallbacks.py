@@ -14,7 +14,7 @@ except (ImportError, ModuleNotFoundError) as e:
 
 if wandb_allennlp:
 
-    @AllennlpWandbSubCallback.register("log_best_validation_metrics")
+    @AllennlpWandbSubCallback.register("log_best_validation_metric")
     class LogBestValidationMetrics(AllennlpWandbSubCallback):
         def on_epoch_(
             self,
