@@ -191,10 +191,7 @@ class MultilabelClassification(ScoreBasedLearningModel):
                 x_conf['x'][key] = value[filtered_batch]
         except:
             x_conf = x[filtered_batch]  
-        return x_conf  
-        
-    
-
+        return x_conf
 
 @Model.register(
     "multi-label-classification-with-scorenn-evaluation",

@@ -66,6 +66,7 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         use_pseudo_labeling: bool = False,  # bool for pseudo labeling (hard label)
         soft_label: bool = False,   # bool for soft label 
         label_smoothing: Dict[str, Any] = {},   # label smoothing config
+        partial_decode: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -137,7 +138,7 @@ class ScoreBasedLearningModel(LoggingMixin, Model):
         self.soft_label = soft_label
         self.use_ls = label_smoothing.get('use_ls', False)
         self.alpha = label_smoothing.get('alpha', 0.0)
-       
+        self.partial_decode = partial_decode
 
     @classmethod
     def from_partial_objects(
