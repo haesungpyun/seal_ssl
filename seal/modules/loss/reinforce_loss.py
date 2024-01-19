@@ -17,11 +17,7 @@ from seal.modules.logging import (
 )
 import torch
 
-def _normalize(y: torch.Tensor) -> torch.Tensor:
-    return torch.sigmoid(y)
-
-
-@Loss.register("reinforce-loss")
+@Loss.register("reinforce")
 class REINFORCELoss(Loss):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
@@ -30,11 +26,7 @@ class REINFORCELoss(Loss):
 
         self._inference_score_values = []
         if self.score_nn is None:
-            raise ConfigurationError("score_nn cannot be None for DVNLoss")
-
-    def normalize(self, y: torch.Tensor) -> torch.Tensor:
-        return _normalize(y)
-        
+            raise ConfigurationError("score_nn cannot be None for REINFORCE Loss")
 
     def _forward(
         self,
@@ -86,7 +78,7 @@ class REINFORCELoss(Loss):
         # ratio = predicted_score / label_score
         ratio = predicted_score
 
-        return self.normalize(ratio)
+        return ratio
 
     def compute_ce_loss(
         self,

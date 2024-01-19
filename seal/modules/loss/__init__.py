@@ -19,3 +19,4 @@ from .sequence_tagging import (
     SequenceTaggingInferenceLoss,
     SequenceTaggingMaskedCrossEntropyWithLogitsLoss,
 )
+from .reinforce_loss import REINFORCELoss
