@@ -3,22 +3,21 @@
     "dataset_reader": {
         "type": "multitask",
         "readers": {
-            "labeled": {
-                "type": "srl-labeled",
-                "bert_model_name": "bert-base-uncased"
+            "labeled":{
+                "type": "arff",
+                "num_labels": 159
             },
             "unlabeled": {
-                "type": "nyt-unlabeled",
-                "bert_model_name": "bert-base-uncased",
-                "max_length": 512
+                "type": "arff-unlabeled",
+                "num_labels": 159
             }
         }
     },
     "data_loader": {
         "type": "multitask",
         "data_path": {
-            "labeled": "./data/conll-2012/v12/data/train/data/english/annotations",
-            "unlabeled": "./data/nyt/nyt-fold-@(0|1).jsonl"
+            "labeled": "./data/bibtex_stratified10folds_meka/Bibtex-fold@(1).arff",
+            "unlabeled": "./data/bibtex_stratified10folds_meka/Bibtex-fold@(2|3|4|5|6).arff"
         },
         "num_workers": {
             "labeled": 0,
@@ -33,61 +32,60 @@
             "drop_last": true
         }
     },
-    "validation_dataset_reader":{
-        "type": "srl-labeled",
-        "bert_model_name": "bert-base-uncased"
+    "validation_dataset_reader": {
+        "type": "arff",
+        "num_labels": 159
     },
     "validation_data_loader": {
-        "batch_sampler": {
-            "type": "bucket",
-            "batch_size": 16,
-            "sorting_keys": [
-                "tokens"
-            ]
-        }
+        "batch_size": 32,
+        "shuffle": true
     },
-    "train_data_path": "./",
-    "validation_data_path": "./data/conll-2012/v12/data/development/data/english/annotations",
     "model": {
-        "type": "seal-srl",
-        "decode_on_wordpieces": true,
+        "type": "multi-label-classification-with-infnet",
         "inference_module": {
-            "type": "sequence-tagging-inference-net-normalized-custom",
+            "type": "multi-label-inference-net-normalized",
             "log_key": "inference_module",
             "loss_fn": {
                 "type": "combination-loss-unlabeled",
                 "constituent_losses": [
                     {
-                        "log_key": "neg.nce_score",
                         "normalize_y": true,
                         "reduction": "none",
-                        "type": "sequence-tagging-score-loss"
-                    },
-                    {
-                        "log_key": "ce",
-                        "normalize_y": false,
-                        "reduction": "none",
-                        "type": "sequence-tagging-masked-cross-entropy"
+                        "type": "multi-label-reinforce"
                     }
                 ],
                 "log_key": "loss",
                 "loss_weights": {
                     "labeled": [
-                        0.5,
                         1
                     ],
                     "unlabeled": [
-                        0.1,
-                        0
+                        0.1
                     ]
                 },
                 "reduction": "mean"
+            },
+            "task_thresholding": {
+                "use_th": false,
+                "method": "skip",
+                "score_conf": {
+                    "cut_type": "discrim",
+                    "quantile": 0.75,
+                    "score_name": "score",
+                    "threshold": -100
+                }
+            },
+            "use_self_training": false,
+            "task_soft_label":false,
+            "task_label_smoothing": {
+                "alpha": 0.1,
+                "use_ls": false
             }
         },
         "initializer": {
             "regexes": [
                 [
-                    ".*feedforward._linear_layers.*weight",
+                    ".*_linear_layers.*weight",
                     {
                         "nonlinearity": "relu",
                         "type": "kaiming_uniform"
@@ -101,14 +99,13 @@
                 ]
             ]
         },
-        "label_encoding": "BIO",
         "label_smoothing": {
             "alpha": 0.1,
             "use_ls": false
         },
         "loss_fn": {
-            "type": "seqtag-nce-ranking-with-discrete-sampling",
-            "log_key": "seq_nce_loss",
+            "type": "multi-label-nce-ranking-with-discrete-sampling",
+            "log_key": "nce",
             "loss_scaling": {
                 "use_scaling": false
             },
@@ -116,12 +113,13 @@
                 "labeled": 1,
                 "unlabeled": 0.1
             },
-            "num_samples": 400,
-            "reduction": "mean"
+            "num_samples": 20,
+            "sign": "-"
         },
+        "soft_label": false,
         "oracle_value_function": {
-            "type": "manhattan",
-            "differentiable": true
+            "type": "per-instance-f1",
+            "differentiable": false
         },
         "sampler": {
             "type": "appending-container",
@@ -129,50 +127,72 @@
             "log_key": "sampler"
         },
         "score_nn": {
-            "type": "sequence-tagging",
+            "type": "multi-label-classification",
             "global_score": {
-                "type": "self-attention-full-sequence",
-                "attention_dim": 256,
-                "dropout": 0.5,
-                "num_heads": 1,
-                "num_tags": 130
+                "type": "multi-label-feedforward",
+                "feedforward": {
+                    "activations": "softplus",
+                    "hidden_dims": 200,
+                    "input_dim": 159,
+                    "num_layers": 1
+                }
             },
             "task_nn": {
-                "type": "sequence-tagging",
-                "text_field_embedder": {
-                    "token_embedders": {
-                        "tokens": {
-                            "type": "pretrained_transformer",
-                            "model_name": "bert-base-uncased"
-                        }
-                    }
+                "type": "multi-label-classification",
+                "feature_network": {
+                    "activations": [
+                        "softplus",
+                        "softplus"
+                    ],
+                    "dropout": [
+                        0.5,
+                        0
+                    ],
+                    "hidden_dims": 400,
+                    "input_dim": 1836,
+                    "num_layers": 2
+                },
+                "label_embeddings": {
+                    "embedding_dim": 400,
+                    "vocab_namespace": "labels"
                 }
             }
         },
         "task_nn": {
-            "type": "sequence-tagging",
-            "text_field_embedder": {
-                "token_embedders": {
-                    "tokens": {
-                        "type": "pretrained_transformer",
-                        "model_name": "bert-base-uncased"
-                    }
-                }
+            "type": "multi-label-classification",
+            "feature_network": {
+                "activations": [
+                    "softplus",
+                    "softplus"
+                ],
+                "dropout": [
+                    0.5,
+                    0
+                ],
+                "hidden_dims": 400,
+                "input_dim": 1836,
+                "num_layers": 2
+            },
+            "label_embeddings": {
+                "embedding_dim": 400,
+                "vocab_namespace": "labels"
             }
         },
         "thresholding": {
-            "use_th": false,
             "method": "skip",
             "score_conf": {
                 "cut_type": "discrim",
                 "quantile": 0.75,
                 "score_name": "score",
                 "threshold": -100
-            }
+            },
+            "use_th": false
         },
-        "use_pseudo_labeling": false,
-        "using_bert_encoder": true
+        "use_pseudo_labeling": false
     },
+    "train_data_path": "./",
+    "validation_data_path": "./data/bibtex_stratified10folds_meka/Bibtex-fold@(7|8).arff",
+    "test_data_path": "./data/bibtex_stratified10folds_meka/Bibtex-fold@(9|10).arff",
     "trainer": {
         "type": "gradient_descent_minimax",
         "callbacks": [
@@ -192,12 +212,11 @@
             "thresholding"
         ],
         "checkpointer": {
-            "keep_most_recent_by_count": 1,
-            "save_every_num_batches": 20000
+            "keep_most_recent_by_count": 1
         },
         "cuda_device": 0,
         "grad_norm": {
-            "task_nn": 1
+            "task_nn": 10
         },
         "inner_mode": "score_nn",
         "learning_rate_schedulers": {
@@ -205,44 +224,36 @@
                 "type": "reduce_on_plateau",
                 "factor": 0.5,
                 "mode": "max",
-                "patience": 2,
+                "patience": 5,
                 "verbose": true
             }
         },
-        "num_epochs": 10,
-        "num_gradient_accumulation_steps": 2,
+        "num_epochs": 300,
+        "num_gradient_accumulation_steps":2,
         "num_steps": {
-            "score_nn": 1,
-            "task_nn": 1
+            "score_nn": 12,
+            "task_nn": 5
         },
         "optimizer": {
             "optimizers": {
                 "score_nn": {
                     "type": "adamw",
-                    "lr": 1e-05,
+                    "lr": 4.512859464505083e-05,
                     "weight_decay": 1e-05
                 },
                 "task_nn": {
-                    "type": "huggingface_adamw",
-                    "lr": 1e-05,
+                    "type": "adamw",
+                    "lr": 0.0011682627302272157,
                     "weight_decay": 1e-05
                 }
             }
         },
-        "patience": 4,
+        "patience": 20,
         "pre_training": 0,
-        "validation_metric": "+f1-measure-overall",
-        "filter_unlab": {
-            "use_fu": false,
-            "model_to_run": "./results/srl_onto_multi_from_scratch"
-        } 
-    },
-    "vocabulary": {
-        "type": "from_files",
-        "directory": "./data/conll-2012/vocabulary"
+        "validation_metric": "+fixed_f1"
     },
     "evaluate_on_test": true,
-    "numpy_seed": 2,
-    "pytorch_seed": 2,
-    "random_seed": 2
+    "numpy_seed": 234,
+    "pytorch_seed": 234,
+    "random_seed": 234
 }

@@ -21,26 +21,18 @@
                 "type": "combination-loss-unlabeled",
                 "constituent_losses": [
                     {
-                        "log_key": "neg.nce_score",
                         "normalize_y": true,
                         "reduction": "none",
-                        "type": "multi-label-score-loss"
-                    },
-                    {
-                        "log_key": "bce",
-                        "reduction": "none",
-                        "type": "multi-label-bce"
+                        "type": "multi-label-reinforce"
                     }
                 ],
                 "log_key": "loss",
                 "loss_weights": {
                     "labeled": [
-                        0.9101649270386852,
                         1
                     ],
                     "unlabeled": [
-                        0.1,
-                        0
+                        0.1
                     ]
                 },
                 "reduction": "mean"
